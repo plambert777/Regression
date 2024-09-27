@@ -1,0 +1,256 @@
+---
+title: "Regression Abalone"
+author: "Parker Lambert"
+date: "2024-09-08"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Linear Regression Example
+
+## Libaries
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(GGally)
+library(e1071)
+library(gridExtra)
+library(corrplot)
+```
+
+## Data Introductions
+
+For this project I will be utilizing a database on Abalone's that was sourced from <https://archive.ics.uci.edu/dataset/1/abalone>
+
+### What is an abalone
+
+An abalone is a type of marine mollusk belonging to the family Haliotidae. It is a single-shelled sea snail, known for its ear-shaped shell, which is lined with a beautiful layer of iridescent nacre, or "mother of pearl." The outer shell is rough and often encrusted with marine organisms, while the inside is smooth and colorful.
+
+Abalones are prized both for their meat, which is considered a delicacy in many cultures, and for their shells, which are often used in jewelry and decorative items. They are typically found in cold coastal waters, clinging to rocks and feeding on algae. In some areas, abalone populations have been severely reduced due to overfishing and environmental changes, leading to various conservation efforts.
+
+## Load Data
+
+```{r}
+(abalone <- read.csv('abalone/abalone.data')) |>
+  head(3)
+```
+
+Now I will add column names
+
+```{r}
+colnames(abalone) <- c("Sex", "LongestShell", "Diameter", "Height", "WholeWeight", "ShuckedWeight", "VisceraWeight", "ShellWeight", "Rings")
+abalone |>
+  head(3)
+```
+
+# Exploritory Data Analysis
+
+## Getting to know the Data
+
+### Data Types
+
+```{r}
+abalone |>
+  str()
+```
+
+above we see that we are dealing with 8 numerical variables and one factor in `Sex` however currently `Sex` is type character
+
+### Convert to Sex to Factor
+
+```{r}
+abalone$Sex <- as.factor(abalone$Sex)
+```
+
+Later on we might want to `one-hot, lable or target encode` Sex however for now factor is enough
+
+### Check for missing
+
+```{r}
+colSums(is.na(abalone))
+```
+
+We are fortunate to have a data set will NA missing values. With further tests we will check if this is becasue the dataset is complete or imputation has occurred.
+
+## Descriptive Statistics
+
+### Column Summary Statistics
+
+```{r}
+abalone |>
+  summary()
+```
+
+### Check for Skewness Kurtosis
+
+```{r}
+numeric_cols <- abalone[, sapply(abalone, is.numeric)]
+
+skewness_values <- apply(numeric_cols, 2, function(x) skewness(x, na.rm = TRUE))
+kurtosis_values <- apply(numeric_cols, 2, function(x) kurtosis(x, na.rm = TRUE))
+
+data.frame(Variable = colnames(numeric_cols), Skewness = skewness_values, Kurtosis = kurtosis_values) |>
+  print()
+```
+
+Link for [Skewness & Kurtosis](https://www.simplilearn.com/tutorials/statistics-tutorial/skewness-and-kurtosis)
+
+**To Interpret Skewness:**
+
+-   -0.5 to 0 and 0 to 0.5: Near Symmetrical
+
+-   -1 to -0.5 and 0.5 to 1: moderate negative/left skew and moderate positive/right Skew
+
+-   \< -1 and \> 1: high negative/left skew and high positive/right skew
+
+**To Interpret Kurtosis:**
+
+-   Expected value is 3 for a `Normal Distribution`
+
+-   \<3 negative/low kurtosis or `Platykurtic` aka slight squish or heavy tails
+
+-   \>3 positive/high kurtosis or `Leptokurtic` aka slight pull up or light tails
+
+**High Kurtosis** signals the presence of outliers
+
+**Low Kurtosis** means fewer extreme outliers
+
+With these interpretations in mind we can see that for our variables we have:
+
+*`LongestShell:`* Moderate Left Skew Slight Negative Kurtosis Squish
+
+*`Diameter:`* Moderate Left Skew Slight Negative Kurtosis Squish
+
+*`Height:`* High Right Skew Extreme Positive Kurtosis Pull
+
+*`WholeWeight:`* Moderate Right Skew Slight Negative Kurtosis Squish
+
+*`ShuckedWeight:`* Moderate Right Skew Slight Negative Kurtosis Squish
+
+*`VisceraWeight:`* Moderate Right Skew Slight Negative Kurtosis Squish
+
+*`ShellWeight:`* Moderate Right Skew Slight Negative Kurtosis Squish
+
+*`Rings:`* High Right Skew Normal Kurtosis
+
+## Visualize the Data
+
+#### Sex
+
+```{r}
+barplot(table(abalone$Sex))
+```
+
+`Sex`
+
+We can see that the groups are roughly evenly split between male female and infant
+
+#### LongestShell - Diameter - Height - WholeWeight
+
+```{r}
+g1 <- ggplot(abalone, aes(x = LongestShell)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "#f6c28b", color = "#a57548", alpha = 0.7) +
+  geom_boxplot(aes(y = 0.75), width = 0.75, fill = "#82ddf0", color = "#5296a5", alpha = 0.85, outlier.shape = 4, outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "Histogram & Boxplot of Longest Shell", x = "Longest Shell", y = "Density") +
+  theme(plot.title = element_text(hjust = 0.5))
+g2 <- ggplot(abalone, aes(x = Diameter)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "#f6c28b", color = "#a57548", alpha = 0.7) +
+  geom_boxplot(aes(y = 0.75), width = 0.75, fill = "#82ddf0", color = "#5296a5", alpha = 0.85, outlier.shape = 4, outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "Histogram & Boxplot of Diameter", x = "Diameter", y = "Density") +
+  theme(plot.title = element_text(hjust = 0.5))
+g3 <- ggplot(abalone, aes(x = Height)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "#f6c28b", color = "#a57548", alpha = 0.7) +
+  geom_boxplot(aes(y = 1.5), width = 1.5, fill = "#82ddf0", color = "#5296a5", alpha = 0.85, outlier.shape = 4, outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "Histogram & Boxplot of Height", x = "Height", y = "Density") +
+  theme(plot.title = element_text(hjust = 0.5))
+g4 <- ggplot(abalone, aes(x = WholeWeight)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "#f6c28b", color = "#a57548", alpha = 0.7) +
+  geom_boxplot(aes(y = 0.18), width = 0.15, fill = "#82ddf0", color = "#5296a5", alpha = 0.85, outlier.shape = 4, outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "Histogram & Boxplot of Whole Weight", x = "Whole Weight", y = "Density") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(g1, g2, g3, g4, nrow = 2, ncol = 2)
+```
+
+`LongestShell`
+
+The data appears slightly negatively skewed, confirmed by the left tail in the histogram. The boxplot also shows several outliers on the lower end, suggesting some unusually short shell lengths.
+
+`Diameter`
+
+This variable is slightly negatively skewed, with the bulk of the data concentrated in the middle range. The boxplot shows a few outliers on the lower end, indicating some observations with smaller diameters
+
+`Height`
+
+The histogram shows a strong positive skew with a sharp peak at a low value, and the boxplot reveals significant outliers at higher heights, highlighting the extreme values.
+
+`WholeWeight`
+
+The distribution is moderately positively skewed, with most data concentrated around lower weights. The boxplot shows several high outliers, indicating a few instances of unusually heavy whole weights
+
+#### ShuckedWeight - VisceraWeight - ShellWeight - Rings
+
+```{r}
+g5 <- ggplot(abalone, aes(x = ShuckedWeight)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "#f6c28b", color = "#a57548", alpha = 0.7) +
+  geom_boxplot(aes(y = 0.5), width = 0.35, fill = "#82ddf0", color = "#5296a5", alpha = 0.85, outlier.shape = 4, outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "Histogram & Boxplot of Shucked Weight", x = "Shucked Weight", y = "Density") +
+  theme(plot.title = element_text(hjust = 0.5))
+g6 <- ggplot(abalone, aes(x = VisceraWeight)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "#f6c28b", color = "#a57548", alpha = 0.7) +
+  geom_boxplot(aes(y = 0.5), width = 0.5, fill = "#82ddf0", color = "#5296a5", alpha = 0.85, outlier.shape = 4, outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "Histogram & Boxplot of Viscera Weight", x = "Viscera Weight", y = "Density") +
+  theme(plot.title = element_text(hjust = 0.5))
+g7 <- ggplot(abalone, aes(x = ShellWeight)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "#f6c28b", color = "#a57548", alpha = 0.7) +
+  geom_boxplot(aes(y = 0.5), width = 0.5, fill = "#82ddf0", color = "#5296a5", alpha = 0.85, outlier.shape = 4, outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "Histogram & Boxplot of Shell Weight", x = "Shell Weight", y = "Density") +
+  theme(plot.title = element_text(hjust = 0.5))
+g8 <- ggplot(abalone, aes(x = Rings)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "#f6c28b", color = "#a57548", alpha = 0.7) +
+  geom_boxplot(aes(y = 0.05), width = 0.035, fill = "#82ddf0", color = "#5296a5", alpha = 0.85, outlier.shape = 4, outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "Histogram & Boxplot of Rings", x = "Rings", y = "Density") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(g5, g6, g7, g8, nrow = 2, ncol = 2)
+```
+
+`ShuckedWeight`
+
+The distribution is positively skewed, with the majority of values concentrated on the lower end. The boxplot indicates the presence of multiple high outliers, showing instances of unusually high shucked weights.
+
+`VisceraWeight`
+
+This variable is also positively skewed with a dense concentration of lower values. The boxplot reveals several high outliers, suggesting some instances of heavier viscera weights than expected.
+
+`ShellWeight`
+
+The distribution shows positive skewness with most of the data near the lower values. The boxplot highlights many high outliers, which point to a few unusually heavy shells.
+
+`Rings`
+
+The distribution is moderately positively skewed with a peak near the center of the range. The boxplot also reveals a number of outliers on the higher end, indicating some individuals with a greater number of rings than typical.
+
+## Correlation
+
+```{r}
+# cor_matrix <- cor(abalone[, sapply(abalone, is.numeric)])
+corrplot(cor(abalone[, sapply(abalone, is.numeric)]), method = "circle")
+```
+As we can see there is a strong correlation between most of the weight related variables. The Rings variable has a relatively low correlation with some attributes, indicating that it behaves somewhat independently of other variables like weight or size.
