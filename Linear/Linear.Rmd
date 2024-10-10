@@ -1,0 +1,206 @@
+---
+title: "Regression Abalone"
+author: "Parker Lambert"
+date: "2024-09-08"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Linear Regression Example
+
+## Libaries
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+```
+
+## Data Introductions
+
+For this project I will be utilizing a database on Abalone's that was sourced from <https://archive.ics.uci.edu/dataset/1/abalone>
+
+### What is an abalone
+
+An abalone is a type of marine mollusk belonging to the family Haliotidae. It is a single-shelled sea snail, known for its ear-shaped shell, which is lined with a beautiful layer of iridescent nacre, or "mother of pearl." The outer shell is rough and often encrusted with marine organisms, while the inside is smooth and colorful.
+
+Abalones are prized both for their meat, which is considered a delicacy in many cultures, and for their shells, which are often used in jewelry and decorative items. They are typically found in cold coastal waters, clinging to rocks and feeding on algae. In some areas, abalone populations have been severely reduced due to overfishing and environmental changes, leading to various conservation efforts.
+
+## Load Data
+
+```{r}
+(abalone <- read.csv('abalone/abalone.data')) |>
+  head(3)
+```
+
+Now I will do what the same code from the EDA in this repo
+
+```{r}
+colnames(abalone) <- c("Sex", "LongestShell", "Diameter", "Height", "WholeWeight", "ShuckedWeight", "VisceraWeight", "ShellWeight", "Rings")
+abalone$Sex <- as.factor(abalone$Sex)
+abalone |>
+  head(3)
+```
+
+## The Models
+
+As layed out in the EDA all of the variables relating to weight are hightly correlated to avoid multicolinearity in our linear model I will just be looking at the effect the number of rings has on Diameter
+
+### Basic
+
+```{r}
+(m_simple <- lm(Diameter ~ Rings, abalone)) |>
+  summary()
+```
+
+We can see that there is a statistically significant relationship between Rings and Diameter for every additional ring our model predicts that the diameter increases by 0.0177. Also the intercept is statistically significant with a starting estimate of 0.2320 for when Rings is zero. However we can see from the residuals section that there is a large range. This indicates there might be some issues with non-linearity or heteroscedasticity. Our model accounts for 33.05% of the variablity in Diameter which is alright but I think we can do better!
+
+```{r}
+par(mfrow=c(2,2))
+plot(m_simple)
+```
+
+From the residuals vs fitted gragh we can see evidence of non-equal variance violating our assumption of heteroscedasticity From the Q-Q plot we can see that the quantiles appear to be normally distributed. There appear to be high leverage points.
+
+## Adding Sex as a Predictor
+
+```{r}
+ggplot(abalone,aes(Diameter, Rings, color = Sex)) +
+  geom_point(alpha = 0.18, size = 1) +
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+From the graph above we can see that the `Sex` of the abalone seems to have clusters for the next two models I will add a Sex as a predictor then as a modifier.
+
+```{r}
+(m_s_simple <- lm(Diameter ~ Rings + Sex, abalone)) |>
+  summary()
+```
+
+Our model with Sex included now accounts for 45.35% of the variabliy in the data and our residuals range has reduced as well.
+
+```{r}
+par(mfrow=c(2,2))
+plot(m_s_simple)
+```
+
+From the residuals vs fitted gragh we can see evidence of non-equal variance however it looks better than the prior model. From the Q-Q plot we can see that the quantiles appear to be normally distributed. Once again some points appear to be high leverage.
+
+## Sex as a Interaction
+
+In humans we know that men tend to have proportionately longer legs. This leads me to wonder if `Sex` of abalone has an effect on the size of rings. To check this `Sex` will be added as an interaction term.
+
+```{r}
+(m_ss_simple <- lm(Diameter ~ Rings*Sex, abalone)) |>
+  summary()
+```
+
+We can see that `Sex` does have a statistically significant effect on Rings male abalone diameter increases slightly more per ring and infants increase a great deal more. Our model now accounts for 49.59% of the variation in Diameter.
+
+```{r}
+par(mfrow=c(2,2))
+plot(m_ss_simple)
+```
+
+We can also see in our residuals plot our residuals appear more nebulus. The Q-Q plot supports normallity. Once again some points appear to be high leverage.
+
+# Final Model with Influential Points Removed
+
+I am satisfied with this last model and now will take into account leverage + outliers to find influential points with the goal of improving the model.
+
+```{r}
+par(mfrow=c(1,3))
+cooksd <- cooks.distance(m_ss_simple)  # Use your final model object here
+
+# Plot Cook's distance
+plot(cooksd, type="h", main="Cook's Distance", ylab="Cook's Distance")
+abline(h = 4 / length(cooksd), col="red")
+hatvalues <- hatvalues(m_ss_simple)
+plot(hatvalues, type = "h", main = "Leverage", ylab = "Leverage")
+
+# Studentized residuals (to check outliers)
+rstudent <- rstudent(m_ss_simple)
+plot(rstudent, type="h", main="Studentized Residuals", ylab="Studentized Residuals")
+abline(h=c(-3, 3), col="red")
+```
+
+*Interpretation*
+
+**Cooks Distance**
+
+Cook's distance measures the influence of each data point on the regression model. There appears to be quite a few points over our threshold of 4/n.
+
+**Leverage**
+
+Leverage measures how far an observation is from the average of all the predictor variables. The spikes in our leverage plot are not extreme enough to immediately indicate highly influential points but require further investigation.
+
+**Studentized Residuals**
+
+Studentized residuals are a standardized form of residuals that allow for the detection of outliers. There are some points close to -3, particularly around index 2000. These points may be borderline outliers, but they are not extreme.
+
+```{r}
+# Cooks Distance
+# Cooks Distance
+cooksd <- cooks.distance(m_ss_simple)
+# Threshold CD
+high_cooks_threshold <- 4 / nrow(abalone)
+# Identify high CD
+high_cooks_points <- which(cooksd > high_cooks_threshold)
+
+# Calculate leverage
+# Calculate leverage
+leverage_values <- hatvalues(m_ss_simple)
+# Threshold for high leverage points
+high_leverage_threshold <- 2 * length(coef(m_ss_simple)) / nrow(abalone)
+# Identify high leverage points
+high_leverage_points <- which(leverage_values > high_leverage_threshold)
+
+# Calculate studentized residuals
+# Calculate studentized residuals
+studentized_residuals <- rstudent(m_ss_simple)
+# Identify Outliers
+large_residual_points <- which(abs(studentized_residuals) > 3)
+
+# Find All unique influential points
+influential_points <- unique(c(high_leverage_points, high_cooks_points, large_residual_points))
+#print(influential_points)
+```
+
+```{r}
+#abalone[influential_points, ]
+```
+
+## Re-Plot Points
+
+```{r}
+# remove infuential points
+abalone_cleaned <- abalone[-influential_points, ]
+
+# Replot
+ggplot(abalone_cleaned,aes(Diameter, Rings, color = Sex)) +
+  geom_point(alpha = 0.18, size = 1) +
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+With the unscientific eye-test when we compare to the previous dot-plot for Diameter vs Rings graph we can see that our influential points appear to be those with high number of rings and infants with small diameter.
+
+## Refit Model
+
+```{r}
+# Refit the model 
+(m_ss_cleaned <- lm(Diameter ~ Rings * Sex, data = abalone_cleaned)) |>
+  summary()
+```
+
+After removing the influential points, the model now explains **56.17%** of the variance in *Diameter* which is a substantial increase. Our coefficients also varied slightly each exhibiting a slight reduction. Our Residual Standard error also decreased suggesting an improved model fit.
+
+```{r}
+par(mfrow = c(2, 2))
+plot(m_ss_cleaned)
+```
+
+The residuals appear fairly evenly distributed around the zero line supporting linearity. The Q-Q plot looks normally distributed supporting normality. All things considered for our final model all assumptions hold.
